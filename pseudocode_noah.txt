@@ -1,0 +1,84 @@
+# OBJECTS #
+
+class GameObject:
+    vec2 position
+    zIndex = 0
+
+    function update(dt)
+    function render()
+
+class PlayerObject, child of GameObject:
+    timer = 0
+    function update(dt):
+        timer -= dt
+        if down pressed, then move down
+        if right pressed, then move right
+        if up pressed, then move up
+        if left pressed, then move left
+
+        if shoot button pressed AND timer equals 0:
+            create PlayerBulletObject at player position
+            timer = 0.5
+
+    function render():
+        draw player sprite
+
+class PlayerBulletObject, child of GameObject:
+    function update(dt):
+        if colliding with bullet:
+            destroy bullet instance
+
+
+    function render():
+        draw bullet sprite
+
+
+class BulletObject, child of GameObject:
+    function update(dt):
+        if colliding with player:
+            gameover()
+
+
+    function render():
+        draw bullet sprite
+
+
+class BulletGenerator, child of GameObject:
+    function update():
+
+
+
+# SCENES #
+
+class GameScene:
+    width = 640
+    height = 480
+
+    function enter() # used for creating objects
+    function update():
+        for each instance in scene:
+            update instance
+    function render():
+        for each instance in scene:
+            render instance
+
+class PlayScene, child of GameScene:
+    function enter():
+        add instance of PlayerObject
+        add instance of BulletGenerator
+
+
+function gameover():
+    go to GameOverScene
+
+
+initalize pygame
+create rendering surface
+
+scene = PlayScene()
+while game is running:
+    if pygame quit:
+        end program
+    
+    scene -> update()
+    scene -> render()
