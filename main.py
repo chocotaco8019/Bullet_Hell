@@ -24,6 +24,7 @@ __current_draw_color__ = pygame.Color(255, 255, 255, 255)
 sprPlayer = pygame.image.load("assets/spaceship.png")
 
 deaths = 0
+killed = False
 
 score = 0
 hiscore = 0
@@ -52,9 +53,14 @@ def TimeToDie():
     global hiscore
     global player
     global deaths
+    global killed
 
+    if killed == True: pass
+    if not scene.instanceExists(player): pass
     if player.invincible: pass
-    deaths += 1
+
+    killed = True
+    #deaths += 1
     if deaths < 3:
         scene.destroyInstance(player)
         PlayerDeathEvent()
@@ -84,6 +90,9 @@ class PlayerObject(Object):
         self.bbox = pygame.Rect(self.position.x, self.position.y, 32, 32)
         self.timer = 0
         self.invincible = True
+
+        global killed
+        killed = False
     mx = 0
     my = 0
     mvspeed = 120
@@ -172,7 +181,7 @@ class EnemyObject(Object):
 
 
 class PlayerDeathEvent(Object):
-    def __init__(self, x, y):
+    def __init__(self, x = 0, y = 0):
         super().__init__(x, y)
         self.timer = 0
 
@@ -180,6 +189,11 @@ class PlayerDeathEvent(Object):
     def update(self, dt):
         super().update(dt)
         self.timer += 1
+
+        if self.timer >= 5:
+            global player
+            player = PlayerObject()
+            scene.addInstance(player)
 
 
     def render(self):
@@ -187,19 +201,17 @@ class PlayerDeathEvent(Object):
         pass
 
 class GameOverEvent(Object):
-    def __init__(self, x, y):
+    def __init__(self, x = 0, y = 0):
         super().__init__(x, y)
         self.timer = 0
 
 
     def update(self, dt):
         super().update(dt)
-        self.timer += 1
-
+        self.timer += 1 * dt
 
     def render(self):
-
-        pass
+        DrawText(50, 50, "GAMEOVER")
 
 player = PlayerObject()
 
@@ -231,8 +243,6 @@ while running:
 
     pygame.display.flip()
     dt = clock.tick(60) / 1000
-
-    print(scene)
 
 
 pygame.quit()
