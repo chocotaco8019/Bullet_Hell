@@ -13,6 +13,8 @@ class Object:
 
         self.hspeed = 0
         self.vspeed = 0
+
+        self.persistent = False
     def update(self, dt): 
         self.position.x += self.velocity.x
         self.position.y += self.velocity.y

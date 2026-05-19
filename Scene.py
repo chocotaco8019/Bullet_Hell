@@ -17,3 +17,10 @@ class Scene:
             self.instances.pop(idx)
         except ValueError:
             print("WARNING!! attempted to remove non-existent instance in scene")
+
+    def instanceExists(self, object):
+        try:
+            idx = self.instances.index(object)
+            return True
+        except ValueError:
+            return False
