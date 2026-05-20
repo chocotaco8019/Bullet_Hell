@@ -2,12 +2,25 @@ import pygame
 import random
 import json
 import sys
+from dataclasses import dataclass
 
 from Object import Object
 from Scene import Scene
 
-SCREEN_WIDTH = 640*2
-SCREEN_HEIGHT = 480*2
+DEBUG = True
+
+SCREEN_WIDTH = 640
+SCREEN_HEIGHT = 480
+
+PLAYFIELD_TOP_HEIGHT = 24
+PLAYFIELD_LEFT_WIDTH = 24
+PLAYFIELD_RIGHT_XPOS = 400
+PLAYFIELD_BOTTOM_YPOS = 400
+
+@dataclass
+class TextAlign:
+    h: str = "left"
+    v: str = "top"
 
 pygame.init()
 pygame.font.init()
@@ -109,12 +122,53 @@ def TimeToDie():
     if deaths < 3:
         scene.addInstance(PlayerDeathEvent())
     else:
-        print(f"died! score: {score} (hiscore: {GetScoreAtIndex(0)["score"]})")
+        print(f"died! score: {score} (hiscore: {GetScoreAtIndex(0)['score']})")
         scene.addInstance(GameOverEvent())
         scene.destroyInstance(bulletgen)
+
+@dataclass
+class TextConfig:
+    position: Vector2
+    size: float = 32
+    font: pygame.font = fntMain
+    bold: bool = False
+    italic: bool = False
+    text: str = ""
+    color: pygame.Color = (255, 255, 255)
+    alignment: TextAlign = TextAlign(h="left", v="top")
+
+class Text:
+    def __init__(self, config):
+        self.config = config
+        self.surface = -1
+        self.drawPosition = self.config.position.copy()
+
+    def update(self, dt): pass
+
+    def render(self):
+        self.surface = self.config.font.render(self.config.text, False, self.config.color)
+
+        if self.config.alignment.h == "left":   self.drawPosition.x = (self.config.position.x)
+        if self.config.alignment.h == "center": self.drawPosition.x = (self.config.position.x - (pygame.font.Font.size(self.config.font, self.config.text)[0] / 2))
+        if self.config.alignment.h == "right":  self.drawPosition.x = (self.config.position.x - (pygame.font.Font.size(self.config.font, self.config.text)[0]))
+
+        if self.config.alignment.v == "top":    self.drawPosition.y = (self.config.position.y)
+        if self.config.alignment.v == "middle": self.drawPosition.y = (self.config.position.y - (pygame.font.Font.size(self.config.font, self.config.text)[1] / 2))
+        if self.config.alignment.v == "bottom": self.drawPosition.y = (self.config.position.y - (pygame.font.Font.size(self.config.font, self.config.text)[1]))
+
+        screen.blit(self.surface, (self.drawPosition.x, self.drawPosition.y))
+
+    def ChangeText(self, text):
+        self.config.text = text
+        self.render()
+    
+    def ChangeColor(self, color):
+        self.config.color = color
+        self.render()
+
         
 class PlayerObject(Object):
-    def __init__(self, x = 256, y = 382):
+    def __init__(self, x = (PLAYFIELD_LEFT_WIDTH + PLAYFIELD_RIGHT_XPOS) / 2 - 12, y = PLAYFIELD_BOTTOM_YPOS  - 64):
         super().__init__(x, y)
         self.position.x = x
         self.position.y = y
@@ -157,8 +211,8 @@ class PlayerObject(Object):
         self.position.x += self.mx
         self.position.y += self.my
 
-        self.position.x = clamp(self.position.x, 50, 500 - 24)
-        self.position.y = clamp(self.position.y, 50, 425 - 36)
+        self.position.x = clamp(self.position.x, PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS - 24)
+        self.position.y = clamp(self.position.y, PLAYFIELD_TOP_HEIGHT, PLAYFIELD_BOTTOM_YPOS - 36)
 
         if pygame.key.get_pressed()[pygame.K_z] and timer % 5 == 0 and self.timer > 0.5:
             scene.addInstance(PlayerBullet(self.position.x, self.position.y))
@@ -183,6 +237,7 @@ class PlayerBullet(Object):
                     global score
                     instance.hp -= 1
                     score += 10
+                    scene.destroyInstance(self)
                     if instance.hp <= 0:
                         scene.destroyInstance(instance)
 
@@ -237,6 +292,7 @@ class EnemyObject(Object):
         self.velocity = velocity
         self.hp = 20
         self.spriteIndex = sprite
+        self.destroyOOB = False
 
 
     def update(self, dt):
@@ -280,6 +336,7 @@ class GameOverEvent(Object):
     def __init__(self, x = 0, y = 0):
         super().__init__(x, y)
         self.timer = 0
+        #scene.addInstance(Text(TextConfig()))
         #SaveScore(input("Input your name. "), score)
         #pygame.quit()
         #sys.exit(-2147483647)
@@ -319,31 +376,48 @@ class IntroMenuScene(Scene):
             DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]))
 
 class GameScene(Scene):
+    textScore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 80), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
+    textHiscore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 170), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
     instances = [
         player,
-        bulletgen
+        bulletgen,
+        Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 50), text="SCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
+        textScore,
+        Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 140), text="HISCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
+        textHiscore,
     ]
+    def update(self, dt):
+        super().update(dt)
+        self.textScore.ChangeText(f"{score:07d}")
+        self.textHiscore.ChangeText(f"{GetScoreAtIndex(0)['score']:07d}")
+        if timer % 30 == 0:
+            self.addInstance(EnemyObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), PLAYFIELD_TOP_HEIGHT - 24, sprBaseEnemy, Vector2(random.randint(-1, 1), random.randint(-3, 4))))
 
     def render(self):
+        screen.fill("red")
         super().render()
-        borderColor = (20, 20, 20)
-        pygame.draw.rect(screen, borderColor, pygame.Rect(0, 0, SCREEN_WIDTH, 50))
-        pygame.draw.rect(screen, borderColor, pygame.Rect(0, 0, 50, SCREEN_HEIGHT))
-        pygame.draw.rect(screen, borderColor, pygame.Rect(0, 425, SCREEN_WIDTH, SCREEN_HEIGHT - 425))
-        pygame.draw.rect(screen, borderColor, pygame.Rect(500, 0, SCREEN_WIDTH - 500, SCREEN_HEIGHT))
+        borderColor = (0, 0, 0)
+        pygame.draw.rect(screen, borderColor, pygame.Rect(0, 0, SCREEN_WIDTH, PLAYFIELD_TOP_HEIGHT))
+        pygame.draw.rect(screen, borderColor, pygame.Rect(0, 0, PLAYFIELD_LEFT_WIDTH, SCREEN_HEIGHT))
+        pygame.draw.rect(screen, borderColor, pygame.Rect(0, PLAYFIELD_BOTTOM_YPOS, SCREEN_WIDTH, SCREEN_HEIGHT - PLAYFIELD_BOTTOM_YPOS))
+        pygame.draw.rect(screen, borderColor, pygame.Rect(PLAYFIELD_RIGHT_XPOS, 0, SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS, SCREEN_HEIGHT))
 
-        DrawText(615 - (pygame.font.Font.size(fntMain, "SCORE")[0] / 2), 50, "SCORE")
-        DrawText(615 - (pygame.font.Font.size(fntMain, str(score))[0] / 2), 80, str(score))
-        DrawText(615 - (pygame.font.Font.size(fntMain, "HISCORE")[0] / 2), 140, "HISCORE")
-        DrawText(615 - (pygame.font.Font.size(fntMain, str(GetScoreAtIndex(0)["score"]))[0] / 2), 170, str(GetScoreAtIndex(0)["score"]))
+        for instance in self.instances:
+            if instance.__class__.__name__ == "Text":
+                if instance.config.text != "GAMEOVER": instance.render()
 
 
 class GameOverScene(Scene):
+    def __init__(self):
+        super().__init__()
+        self.nameText = Text(TextConfig(position=Vector2(320, 130), text="", alignment=TextAlign(h="center", v="top"), size=32))
+        self.addInstance(Text(TextConfig(position=Vector2(320, 20), text="Input your NAME.", alignment=TextAlign(h="center", v="top"), size=32)))
+        self.addInstance(Text(TextConfig(position=Vector2(320, 55), text="(And press [RETURN] to continue.)", alignment=TextAlign(h="center", v="top"), size=16)))
+        self.addInstance(self.nameText)
+
     def render(self):
         super().render()
-        DrawText(370 - (pygame.font.Font.size(fntMain, "Input your NAME.")[0] / 2), 40, "Input your NAME.")
-        DrawText(370 - (pygame.font.Font.size(fntMain, "(And press [SHIFT] to continue.)")[0] / 2), 70, "(And press [SHIFT] to continue.)")
-        DrawText(370 - (pygame.font.Font.size(fntMain, name)[0] / 2), 130, name)
+        self.nameText.ChangeText(name)
         _lineY = (130 + pygame.font.Font.size(fntMain, name)[1] + 10)
         pygame.draw.line(screen, (255, 255, 255), (370 - (pygame.font.Font.size(fntMain, name)[0] / 2) - 10, _lineY), (370 + (pygame.font.Font.size(fntMain, name)[0] / 2) + 10, _lineY))
 
@@ -359,7 +433,7 @@ while running:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_BACKSPACE:
                     name = name[:-1]
-                elif event.key == pygame.K_LSHIFT:
+                elif event.key == pygame.K_RETURN:
                     SaveScore(name, score)
                     ChangeScene(IntroMenuScene())
                 elif event.unicode.isalnum():
