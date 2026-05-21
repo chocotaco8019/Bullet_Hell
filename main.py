@@ -2,7 +2,7 @@ import pygame
 import random
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from Object import Object
 from Scene import Scene
@@ -30,6 +30,9 @@ clock = pygame.time.Clock()
 running = True
 dt = 0
 timescale = 1.0
+
+sndShoot = pygame.Sound("assets/sounds/shoot.wav")
+sndDeath = pygame.Sound("assets/sounds/death.wav")
 
 channelMusic = pygame.mixer.Channel(1)
 channelSFX = pygame.mixer.Channel(2)
@@ -97,9 +100,9 @@ def SaveScore(name, score = score):
 
 def ButtonPressed(key):
     return pygame.key.get_pressed()[key]
-    for event in pygame.event.get():
-        if event.type == pygame.KEYDOWN:
-            return event.key == key
+    # for event in pygame.event.get():
+    #     if event.type == pygame.KEYDOWN:
+    #         return event.key == key
 
 def ButtonHeld(key):
     return pygame.key.get_pressed()[key]
@@ -131,6 +134,8 @@ def TimeToDie():
 
     scene.destroyInstance(player)
 
+    sndDeath.play()
+
     deaths += 1
     if deaths < 3:
         scene.addInstance(PlayerDeathEvent())
@@ -149,7 +154,7 @@ class TextConfig:
     italic: bool = False
     text: str = ""
     color: pygame.Color = (255, 255, 255)
-    alignment: TextAlign = TextAlign(h="left", v="top")
+    alignment: TextAlign = field(default_factory=TextAlign)
 
 class Text:
     def __init__(self, config):
@@ -232,6 +237,7 @@ class PlayerObject(Object):
 
         if pygame.key.get_pressed()[pygame.K_z] and timer % 5 == 0 and self.timer > 0.5:
             scene.addInstance(PlayerBullet(self.position.x, self.position.y))
+            sndShoot.play()
 
     def render(self):
         if not self.invincible or timer % 2 == 0: DrawSprite(sprPlayer, self.position.x, self.position.y, (0.5, 0.5))
@@ -240,7 +246,7 @@ class PlayerBullet(Object):
     def __init__(self, x, y, velocity = Vector2(0, -4)):
         super().__init__(x, y)
         self.velocity = velocity
-        self.destroyOOB = False
+        self.destroyOOB = True
 
 
     def update(self, dt):
@@ -422,7 +428,7 @@ class IntroMenuScene(Scene):
 
 
         if ButtonPressed(pygame.K_RETURN):
-            if self.menu == 1:
+            if self.menu == 0:
                 if self.selected == 0:
                     ChangeScene(GameScene())
                 elif self.selected == 1:
@@ -456,6 +462,7 @@ class GameScene(Scene):
         textHiscore,
     ]
     def update(self, dt):
+        global conductor
         super().update(dt)
         self.textScore.ChangeText(f"{score:07d}")
         if score < GetScoreAtIndex(0)['score']:
