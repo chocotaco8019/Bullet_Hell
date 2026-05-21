@@ -47,7 +47,13 @@ sprBaseEnemy = pygame.image.load("assets/test_enemy.png")
 
 deaths = 0
 killed = False
+gameover = False
 timer = 0
+conductor = 0
+
+message = []
+
+message.append("message test")
 
 name = ""
 score = 0
@@ -91,6 +97,12 @@ def SaveScore(name, score = score):
 
 def ButtonPressed(key):
     return pygame.key.get_pressed()[key]
+    for event in pygame.event.get():
+        if event.type == pygame.KEYDOWN:
+            return event.key == key
+
+def ButtonHeld(key):
+    return pygame.key.get_pressed()[key]
 
 def DrawSetColor(color):
     __current_draw_color__ = color
@@ -112,6 +124,7 @@ def TimeToDie():
     global score
     global player
     global deaths
+    global gameover
 
     if not scene.instanceExists(player): return
     if player.invincible: return
@@ -125,6 +138,7 @@ def TimeToDie():
         print(f"died! score: {score} (hiscore: {GetScoreAtIndex(0)['score']})")
         scene.addInstance(GameOverEvent())
         scene.destroyInstance(bulletgen)
+        gameover = True
 
 @dataclass
 class TextConfig:
@@ -177,9 +191,11 @@ class PlayerObject(Object):
         self.timer = 0
         self.invincible = True
 
+        global gameover
         global killed
         global timescale
 
+        gameover = False
         killed = False
         timescale = 1.0
     mx = 0
@@ -290,7 +306,7 @@ class EnemyObject(Object):
     def __init__(self, x, y, sprite = sprBaseEnemy, velocity = Vector2(0, 0)):
         super().__init__(x, y)
         self.velocity = velocity
-        self.hp = 20
+        self.hp = 10
         self.spriteIndex = sprite
         self.destroyOOB = False
 
@@ -310,6 +326,22 @@ class EnemyObject(Object):
         if self.spriteIndex != -1: DrawSprite(self.spriteIndex, self.position.x, self.position.y, (0.5, 0.5))
         else: pygame.draw.circle(screen, (255, 98, 27), self.position, 16)
 
+class WriterObject(Object):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.timer = 0
+        self.lock = 0
+        self.strpos = 0
+        self.text = message[0]
+    
+
+    def update(self, dt):
+        super().update(dt)
+
+
+    def render(self):
+
+        pass
 
 class PlayerDeathEvent(Object):
     def __init__(self, x = 0, y = 0):
@@ -361,19 +393,56 @@ player = PlayerObject()
 bulletgen = BulletGeneratorObject()
 
 class IntroMenuScene(Scene):
+    def __init__(self):
+        super().__init__()
+        self.options = []
+        self.options.append(Text(TextConfig(position=Vector2(320, 200), text="Start", alignment=TextAlign(h="center", v="top"))))
+        self.options.append(Text(TextConfig(position=Vector2(320, 250), text="Leaderboard", alignment=TextAlign(h="center", v="top"))))
+        self.options.append(Text(TextConfig(position=Vector2(320, 300), text="Quit", alignment=TextAlign(h="center", v="top"))))
+        for i in self.options: self.addInstance(i)
     inputTimer = 0
+    selected = 0
+    menu = 0
+
     def update(self, dt):
         super().update(dt)
         self.inputTimer += 1 * dt
+        if self.inputTimer < 0.5: return
 
-        if ButtonPressed(pygame.K_z) and self.inputTimer >= 0.5:
-            ChangeScene(GameScene())
+        if ButtonPressed(pygame.K_UP):
+            self.selected -= 1
+            if self.selected <= -1:
+                self.selected = len(self.options)
+        if ButtonPressed(pygame.K_DOWN):
+            self.selected += 1
+            if self.selected >= len(self.options):
+                self.selected = 0
+
+        self.selected = clamp(self.selected, 0, len(self.options))
+
+
+        if ButtonPressed(pygame.K_RETURN):
+            if self.menu == 1:
+                if self.selected == 0:
+                    ChangeScene(GameScene())
+                elif self.selected == 1:
+                    self.menu = 1
+                elif self.selected == 2:
+                    pygame.quit()
+                    sys.exit(0)
+                else:
+                    print(f"??? ({self.selected})")
+            elif self.menu == 1:
+                self.menu = 0
         
     def render(self):
-        DrawText(20, 20, "press Z key to continue")
-
-        for i in range(len(hiscores)):
-            DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]))
+        if self.menu == 0:
+            for i in range(len(self.options)):
+                if i == self.selected: self.options[i].ChangeColor(pygame.Color(255, 255, 0))
+                else: self.options[i].ChangeColor(pygame.Color(255, 255, 255))
+        elif self.menu == 1:
+            for i in range(len(hiscores)):
+                DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]))
 
 class GameScene(Scene):
     textScore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 80), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
@@ -389,7 +458,15 @@ class GameScene(Scene):
     def update(self, dt):
         super().update(dt)
         self.textScore.ChangeText(f"{score:07d}")
-        self.textHiscore.ChangeText(f"{GetScoreAtIndex(0)['score']:07d}")
+        if score < GetScoreAtIndex(0)['score']:
+            self.textHiscore.ChangeText(f"{GetScoreAtIndex(0)['score']:07d}")
+        else:
+            self.textHiscore.ChangeText(f"{score:07d}")
+
+        if gameover: return
+
+        conductor += 1
+
         if timer % 30 == 0:
             self.addInstance(EnemyObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), PLAYFIELD_TOP_HEIGHT - 24, sprBaseEnemy, Vector2(random.randint(-1, 1), random.randint(-3, 4))))
 
