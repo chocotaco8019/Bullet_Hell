@@ -2,10 +2,14 @@ import pygame
 import random
 import json
 import sys
+import os
+import math
+from pathlib import Path
 from dataclasses import dataclass, field
 
 from Object import Object
 from Scene import Scene
+
 
 DEBUG = True
 
@@ -30,22 +34,30 @@ clock = pygame.time.Clock()
 running = True
 dt = 0
 timescale = 1.0
+lunatic = False
 
-sndShoot = pygame.Sound("assets/sounds/shoot.wav")
-sndDeath = pygame.Sound("assets/sounds/death.wav")
+
+sndShoot = pygame.mixer.Sound("assets/sounds/shoot.wav")
+sndDeath = pygame.mixer.Sound("assets/sounds/death.wav")
+
+musTitle = pygame.mixer.Sound("assets/music/nightofnights.mp3")
+musLevel1 = pygame.mixer.Sound("assets/music/deathbyglamour.mp3")
+musJimmyBoss = pygame.mixer.Sound("assets/music/nightofnights.mp3")
 
 channelMusic = pygame.mixer.Channel(1)
+channelMusic.set_volume(1)
+
 channelSFX = pygame.mixer.Channel(2)
+channelSFX.set_volume(0.4)
 
 Vector2 = pygame.math.Vector2
 
 fntMain = pygame.font.Font("assets/alagard.ttf", 32)
 
-#musLevel1 = pygame.sound.Sound("assets/")
-
 __current_draw_color__ = pygame.Color(255, 255, 255, 255)
 
 sprPlayer = pygame.image.load("assets/spaceship.png")
+sprPlayerBullet = pygame.image.load("assets/mybullet.png")
 sprBaseEnemy = pygame.image.load("assets/test_enemy.png")
 
 deaths = 0
@@ -53,6 +65,19 @@ killed = False
 gameover = False
 timer = 0
 conductor = 0
+
+def BulletPattern(patternID, center = Vector2(0, 0), bulletCount = 8):
+    if patternID == 1: # CircularPattern
+        if lunatic == True:
+            bulletCount *= 2.5
+        for i in range(round(bulletCount)):
+            radians = math.radians(360 / bulletCount) * i  # Evenly spaced angles
+
+            scene.addInstance(BulletObject(center.x, center.y, Vector2(math.cos(radians) * 1.5, math.sin(radians) * 1.5)))
+    elif patternID == 2: #
+        pass
+    else:
+        print(f"unknown bullet pattern (patternID={patternID}) attempted spawn")
 
 message = []
 
@@ -62,11 +87,9 @@ name = ""
 score = 0
 hiscores = 0
 hiscoresJsonData = {}
-
 #load hiscores
-fileid = open("hiscores.json")
-hiscoresJsonData = fileid.read()
-fileid.close()
+with open("C:\\Users\\nrider139327\\Documents\\" + "hiscores.json", "r") as fileid:
+    hiscoresJsonData = fileid.read()
 
 hiscores = json.loads(hiscoresJsonData)["scores"]
 
@@ -80,21 +103,24 @@ def GetScoreAtIndex(idx = 0):
         _names.append(player['name'])
     
     #_scores.sort(reverse=True) #reversi
-    return json.loads("{\"name\": \"" + str(_names[idx]) + "\", \"score\": " + str(_scores[idx]) + "}")
+    lunaticStore = 0
+    if lunatic: lunaticStore = 1
+    return json.loads("{\"name\": \"" + str(_names[idx]) + "\", \"score\": " + str(_scores[idx]) + ", \"lunatic\": " + str(lunaticStore) + "}")
 
 def SaveScore(name, score = score):
     global hiscoresJsonData
     global hiscores
-    fileid = open("hiscores.json", "w")
-    hiscores.append(json.loads("{\"name\": \"" + str(name) + "\", \"score\": " + str(score) + "}"))
-    fileid.write("{\"scores\":" + json.dumps(hiscores) + "}")
-    fileid.close()
+    global lunatic
+    lunaticStore = 0
+    if lunatic: lunaticStore = 1
+    with open("C:\\Users\\nrider139327\\Documents\\" + "hiscores.json", "w") as fileid:
+        hiscores.append(json.loads("{\"name\": \"" + str(name) + "\", \"score\": " + str(score) + ", \"lunatic\": " + str(lunaticStore) + "}"))
+        fileid.write("{\"scores\":" + json.dumps(hiscores) + "}")
     pygame.time.wait(100)
 
     #load hiscores
-    fileid = open("hiscores.json")
-    hiscoresJsonData = fileid.read()
-    fileid.close()
+    with open("C:\\Users\\nrider139327\\Documents\\" + "hiscores.json") as fileid:
+        hiscoresJsonData = fileid.read()
     hiscores = json.loads(hiscoresJsonData)["scores"]
 
 
@@ -121,6 +147,7 @@ def DrawSprite(sprite, x, y, scale = (1, 1)):
 
 def ChangeScene(scn):
     global scene
+    scene.leave()
     scene = scn
 
 def TimeToDie():
@@ -134,16 +161,17 @@ def TimeToDie():
 
     scene.destroyInstance(player)
 
-    sndDeath.play()
+    channelSFX.play(sndDeath)
 
     deaths += 1
     if deaths < 3:
-        scene.addInstance(PlayerDeathEvent())
+        scene.addInstance(PlayerDeathEvent(player.position.x, player.position.y))
     else:
         print(f"died! score: {score} (hiscore: {GetScoreAtIndex(0)['score']})")
         scene.addInstance(GameOverEvent())
         scene.destroyInstance(bulletgen)
         gameover = True
+        musLevel1.fadeout(2500)
 
 @dataclass
 class TextConfig:
@@ -192,7 +220,7 @@ class PlayerObject(Object):
         self.position.x = x
         self.position.y = y
         
-        self.bbox = pygame.Rect(self.position.x, self.position.y, 24, 36)
+        self.bbox = pygame.Rect(self.position.x + 12, self.position.y + 18, 6, 9)
         self.timer = 0
         self.invincible = True
 
@@ -207,8 +235,8 @@ class PlayerObject(Object):
     my = 0
     mvspeed = 200
     def update(self, dt):
-        super().update(dt)
-        self.bbox = pygame.Rect(self.position.x, self.position.y, 24, 36)
+        super().update(dt) 
+        self.bbox = pygame.Rect(self.position.x + 12, self.position.y + 18, 6, 9)
 
         self.timer += dt
 
@@ -235,15 +263,16 @@ class PlayerObject(Object):
         self.position.x = clamp(self.position.x, PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS - 24)
         self.position.y = clamp(self.position.y, PLAYFIELD_TOP_HEIGHT, PLAYFIELD_BOTTOM_YPOS - 36)
 
-        if pygame.key.get_pressed()[pygame.K_z] and timer % 5 == 0 and self.timer > 0.5:
+        if pygame.key.get_pressed()[pygame.K_z] and timer % 6 == 0 and self.timer > 0.5:
             scene.addInstance(PlayerBullet(self.position.x, self.position.y))
-            sndShoot.play()
+            channelSFX.stop()
+            channelSFX.play(sndShoot)
 
     def render(self):
         if not self.invincible or timer % 2 == 0: DrawSprite(sprPlayer, self.position.x, self.position.y, (0.5, 0.5))
 
 class PlayerBullet(Object):
-    def __init__(self, x, y, velocity = Vector2(0, -4)):
+    def __init__(self, x, y, velocity = Vector2(0, -8)):
         super().__init__(x, y)
         self.velocity = velocity
         self.destroyOOB = True
@@ -268,18 +297,19 @@ class PlayerBullet(Object):
 
             
     def render(self):
-        pygame.draw.rect(screen, (255, 255, 255), self.bbox, 8)
+       DrawSprite(sprPlayerBullet, self.position.x, self.position.y, (0.5, 0.5))
 
 class BulletObject(Object):
-    def __init__(self, x, y, velocity = Vector2(0, 0)):
+    def __init__(self, x, y, velocity = Vector2(0, 0), size = random.randint(3, 5)):
         super().__init__(x, y)
         self.velocity = velocity
         self.destroyOOB = False
+        self.size = size
 
 
     def update(self, dt):
         super().update(dt)
-        self.bbox = pygame.Rect(self.position.x - 4, self.position.y - 4, 8, 8)
+        self.bbox = pygame.Rect(self.position.x - (self.size / 2), self.position.y - (self.size / 2), self.size, self.size)
 
         if not scene.instanceExists(player): return
 
@@ -289,7 +319,7 @@ class BulletObject(Object):
             scene.destroyInstance(self)
             
     def render(self):
-        pygame.draw.circle(screen, (255, 255, 255), self.position, 8)
+        pygame.draw.circle(screen, (255, 255, 255), self.position, self.size)
 
 class BulletGeneratorObject(Object):
     def __init__(self, x = 0, y = 0):
@@ -300,10 +330,7 @@ class BulletGeneratorObject(Object):
     def update(self, dt):
         super().update(dt)
         self.timer += 1
-        if self.timer == 1: scene.addInstance(EnemyObject(250, 250))
         #TODO: add bullets/enemies here
-        if self.timer % 10 == 0:
-            scene.addInstance(BulletObject(random.randint(12, 640 - 12), 5, Vector2(random.randint(-2, 2), random.randint(1, 3))))
 
 
     def render(self): pass
@@ -312,7 +339,7 @@ class EnemyObject(Object):
     def __init__(self, x, y, sprite = sprBaseEnemy, velocity = Vector2(0, 0)):
         super().__init__(x, y)
         self.velocity = velocity
-        self.hp = 10
+        self.hp = 1
         self.spriteIndex = sprite
         self.destroyOOB = False
 
@@ -320,6 +347,11 @@ class EnemyObject(Object):
     def update(self, dt):
         super().update(dt)
         self.bbox = pygame.Rect(self.position.x, self.position.y, 28, 28)
+
+        randvalue = 400
+        if lunatic: randvalue = 200
+        if round(random.randint(0, randvalue)) == 1:
+            BulletPattern(1, Vector2(self.position.x, self.position.y), 8)
         
         if not scene.instanceExists(player): return
 
@@ -331,6 +363,30 @@ class EnemyObject(Object):
     def render(self):
         if self.spriteIndex != -1: DrawSprite(self.spriteIndex, self.position.x, self.position.y, (0.5, 0.5))
         else: pygame.draw.circle(screen, (255, 98, 27), self.position, 16)
+
+class StarObject(Object):
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.alpha = random.uniform(0.2, 0.8)
+        self.distance = abs(conductor - y)
+        self.size = random.uniform(0.2, 1.4)
+    
+
+    def update(self, dt):
+        super().update(dt)
+        self.position.y = (conductor - self.distance)
+
+        if self.position.y >= PLAYFIELD_BOTTOM_YPOS:
+            scene.addInstance(StarObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), random.randint(0, PLAYFIELD_TOP_HEIGHT)))
+            scene.destroyInstance(self)
+
+
+    def render(self):
+        pygame.draw.circle(screen, (255, 255, 255), self.position, self.size)
+        # star = pygame.Surface((self.size, self.size))
+        # star.set_alpha(self.alpha)
+        # pygame.draw.circle(star, (255, 255, 255), (self.size / 2, self.size / 2), self.size)
+        # screen.blit(star, (self.position.x, self.position.y))
 
 class WriterObject(Object):
     def __init__(self, x, y):
@@ -353,11 +409,25 @@ class PlayerDeathEvent(Object):
     def __init__(self, x = 0, y = 0):
         super().__init__(x, y)
         self.timer = 0
+        self.circles = 12
+        self.bullets = []
+        self.animdone = False
+
+        for i in range(self.circles):
+            radians = math.radians((360 / self.circles) * i)
+            bullet = BulletObject(self.position.x, self.position.y, Vector2(math.cos(radians) * 1.5, math.sin(radians) * 1.5), 2)
+            self.bullets.append(bullet)
+            scene.addInstance(bullet)
 
 
     def update(self, dt):
         super().update(dt)
         self.timer += 1 * dt
+
+        if self.timer > 0.75 and not self.animdone:
+            self.animdone = True
+            for bullet in self.bullets:
+                scene.destroyInstance(bullet)
 
         if self.timer >= 3:
             global player
@@ -430,6 +500,12 @@ class IntroMenuScene(Scene):
         if ButtonPressed(pygame.K_RETURN):
             if self.menu == 0:
                 if self.selected == 0:
+                    global lunatic
+                    global score
+                    lunatic = ButtonHeld(pygame.K_LSHIFT)
+                    
+                    score = 0
+                    player = PlayerObject()
                     ChangeScene(GameScene())
                 elif self.selected == 1:
                     self.menu = 1
@@ -442,25 +518,39 @@ class IntroMenuScene(Scene):
                 self.menu = 0
         
     def render(self):
+        selectColor = pygame.Color(98, 255, 98)
+        if ButtonHeld(pygame.K_LSHIFT): selectColor = pygame.Color(255, 0, 0)
         if self.menu == 0:
             for i in range(len(self.options)):
-                if i == self.selected: self.options[i].ChangeColor(pygame.Color(255, 255, 0))
+                if i == self.selected: self.options[i].ChangeColor(selectColor)
                 else: self.options[i].ChangeColor(pygame.Color(255, 255, 255))
         elif self.menu == 1:
             for i in range(len(hiscores)):
-                DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]))
+                color = pygame.Color(255, 255, 255)
+                if GetScoreAtIndex(i)["lunatic"]: color = pygame.Color(255, 0, 0)
+                DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]), color)
 
 class GameScene(Scene):
-    textScore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 80), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
-    textHiscore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 170), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
-    instances = [
-        player,
-        bulletgen,
-        Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 50), text="SCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
-        textScore,
-        Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 140), text="HISCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
-        textHiscore,
-    ]
+    def __init__(self):
+        super().__init__()
+        channelMusic.play(musLevel1, 99999)
+
+        self.textScore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 80), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
+        self.textHiscore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 170), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
+        self.instances = [
+            player,
+            bulletgen,
+            Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 50), text="SCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
+            self.textScore,
+            Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 140), text="HISCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
+            self.textHiscore,
+        ]
+        if lunatic: self.instances.append(Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 240), text="LUNATIC", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 0, 0))))
+        for i in range(64):
+            self.instances.append(StarObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), random.randint(PLAYFIELD_TOP_HEIGHT, PLAYFIELD_BOTTOM_YPOS)))
+
+
+
     def update(self, dt):
         global conductor
         super().update(dt)
@@ -472,13 +562,12 @@ class GameScene(Scene):
 
         if gameover: return
 
-        conductor += 1
+        conductor += 45 * dt
 
         if timer % 30 == 0:
-            self.addInstance(EnemyObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), PLAYFIELD_TOP_HEIGHT - 24, sprBaseEnemy, Vector2(random.randint(-1, 1), random.randint(-3, 4))))
+            self.addInstance(EnemyObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), PLAYFIELD_TOP_HEIGHT - 24, sprBaseEnemy, Vector2(random.randint(-1, 1), 2)))
 
     def render(self):
-        screen.fill("red")
         super().render()
         borderColor = (0, 0, 0)
         pygame.draw.rect(screen, borderColor, pygame.Rect(0, 0, SCREEN_WIDTH, PLAYFIELD_TOP_HEIGHT))
@@ -489,6 +578,10 @@ class GameScene(Scene):
         for instance in self.instances:
             if instance.__class__.__name__ == "Text":
                 if instance.config.text != "GAMEOVER": instance.render()
+
+    def leave(self):
+        super().leave()
+        channelMusic.stop()
 
 
 class GameOverScene(Scene):
@@ -520,6 +613,8 @@ while running:
                 elif event.key == pygame.K_RETURN:
                     SaveScore(name, score)
                     ChangeScene(IntroMenuScene())
+                    gameover = False
+                    deaths = 0
                 elif event.unicode.isalnum():
                     name += event.unicode
     

@@ -7,6 +7,10 @@ class Scene:
         for instance in self.instances:
             instance.render()
 
+    def leave(self): 
+        for instance in self.instances:
+            self.destroyInstance(instance)
+
 
     def addInstance(self, object):
         self.instances.append(object)
