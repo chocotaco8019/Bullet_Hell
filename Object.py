@@ -19,3 +19,4 @@ class Object:
         self.position.x += self.velocity.x
         self.position.y += self.velocity.y
     def render(self): pass
+    def destroy(self): pass
