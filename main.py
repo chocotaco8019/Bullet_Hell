@@ -22,8 +22,10 @@ PLAYFIELD_RIGHT_XPOS = 400
 PLAYFIELD_BOTTOM_YPOS = 400
 PLAYFIELD_WIDTH = (PLAYFIELD_RIGHT_XPOS - PLAYFIELD_LEFT_WIDTH)
 PLAYFIELD_HEIGHT = (PLAYFIELD_BOTTOM_YPOS - PLAYFIELD_TOP_HEIGHT)
+PLAYFIELD_MIDDLE_XPOS = (PLAYFIELD_LEFT_WIDTH + (PLAYFIELD_WIDTH / 2))
+PLAYFIELD_MIDDLE_XPOS = (PLAYFIELD_TOP_HEIGHT + (PLAYFIELD_HEIGHT / 2))
 
-HISCORES_FILE = "hiscores.json"
+HISCORES_FILE = "C:\\Users\\nrider139327\\Documents\\hiscores.json"
 
 @dataclass
 class TextAlign:
@@ -33,12 +35,14 @@ class TextAlign:
 pygame.init()
 pygame.font.init()
 pygame.mixer.init()
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))#, pygame.SCALED)
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SCALED)
+pygame.display.set_caption("CNA Galaxy")
 clock = pygame.time.Clock()
 running = True
 dt = 0
 
 lunatic = False
+endless = False
 action = 0
 timescale = 1.0
 textbox = -1
@@ -57,7 +61,8 @@ sndShoot = pygame.mixer.Sound("assets/sounds/shoot.wav")
 sndDeath = pygame.mixer.Sound("assets/sounds/death.wav")
 
 musTitle = pygame.mixer.Sound("assets/music/nightofnights.mp3")
-musLevel1 = pygame.mixer.Sound("assets/music/testsong.ogg")
+musLevel1 = pygame.mixer.Sound("assets/music/deathbyglamour.mp3")
+#musLevel1 = pygame.mixer.Sound("assets/music/testsong.ogg")
 musJimmyBoss = pygame.mixer.Sound("assets/music/nightofnights.mp3")
 
 channelMusic = pygame.mixer.Channel(1)
@@ -79,6 +84,7 @@ timer = 0
 conductor = 0
 
 def AddScore(scoreToAdd):
+    scoreToAdd = round(scoreToAdd)
     global scoreAdd
     scoreAdd = scoreToAdd
 
@@ -109,13 +115,22 @@ for n in range(64): message.append("%%")
 
 name = ""
 score = 0
-hiscores = 0
+hiscores = []
 hiscoresJsonData = {}
 #load hiscores
-with open(HISCORES_FILE, "r") as fileid:
-    hiscoresJsonData = fileid.read()
+def LoadHiscores():
+    global hiscoresJsonData
+    global hiscores
+    with open(HISCORES_FILE, "r") as fileid:
+        hiscoresJsonData = fileid.read()
 
-hiscores = json.loads(hiscoresJsonData)["scores"]
+    hiscores = json.loads(hiscoresJsonData)["scores"]
+
+    for hiscore in hiscores:
+        if not "lunatic" in hiscore.keys(): hiscore["lunatic"] = 0
+        if not "endless" in hiscore.keys(): hiscore["endless"] = 0
+
+LoadHiscores()
 
 def clamp(n, smallest, largest): return max(smallest, min(n, largest))
 
@@ -133,15 +148,15 @@ def SaveScore(name, score = score):
     global lunatic
     iAmALunatic = 0
     if lunatic: iAmALunatic = 1
+    iAmEndless = 0
+    if endless: iAmEndless = 1
     with open(HISCORES_FILE, "w") as fileid:
-        hiscores.append(json.loads("{\"name\": \"" + str(name) + "\", \"score\": " + str(score) + ", \"lunatic\": " + str(iAmALunatic) + "}"))
+        hiscores.append(json.loads("{\"name\": \"" + str(name) + "\", \"score\": " + str(score) + ", \"lunatic\": " + str(iAmALunatic) + ", \"endless\": " + str(iAmEndless) + "}"))
         fileid.write("{\"scores\":" + json.dumps(hiscores) + "}")
     pygame.time.wait(100)
 
     #load hiscores
-    with open(HISCORES_FILE) as fileid:
-        hiscoresJsonData = fileid.read()
-    hiscores = json.loads(hiscoresJsonData)["scores"]
+    LoadHiscores()
 
 
 pressedKeys = set()
@@ -337,8 +352,11 @@ class PlayerBullet(Object):
             if instance.__class__.__name__ == "EnemyObject":
                 if self.bbox.colliderect(instance.bbox):
                     global score
+                    global lunatic
                     instance.hp -= 1
-                    AddScore(250)
+                    scoreToAdd = 250
+                    if lunatic: scoreToAdd *= 1.75
+                    AddScore(scoreToAdd)
                     if instance.hp <= 0:
                         scene.destroyInstance(instance)
                     scene.destroyInstance(self)
@@ -427,6 +445,9 @@ class JimmyBossObject(EnemyObject):
         self.spawnBullets = False
         self.spriteIndex = sprJimmyBoss
         self.timer = 0
+        self.angle = 0
+        self.stage = 0
+        self.radius = 50
         self.inctimer = True
         self.talked = []
         self.finishtalk = []
@@ -438,7 +459,8 @@ class JimmyBossObject(EnemyObject):
         super().update(dt)
         global action
         global textbox
-        self.bbox = pygame.Rect(self.position.x, self.position.y, 28, 28)
+        self.bbox = pygame.Rect(self.position.x, self.position.y, 80, 88)
+        if self.stage == 0: self.position.y += math.sin(timer / 16) * 2
         if self.inctimer: self.timer += 1 * dt
 
         if self.timer >= 2 and scene.instanceExistsByName("EnemyObject") == False:
@@ -454,11 +476,23 @@ class JimmyBossObject(EnemyObject):
                 textbox = TextboxObject()
                 scene.addInstance(textbox)
             elif scene.instanceExists(textbox) == False and self.finishtalk[0] == False:
-                #TODO: first bullet patternz
                 self.finishtalk[0] = True
                 action = 0
                 channelMusic.play(musJimmyBoss)
                 self.timer = 0
+                self.stage = 1
+
+        if self.stage == 1:
+            self.angle += 0.16
+            self.position.x += math.cos((self.angle) / 4) * self.radius * 0.08
+            self.position.y += math.sin((self.angle * 2) / 4) * self.radius * 0.12
+
+            wait = 16
+            if lunatic: wait = 30
+            if timer % wait == 0:
+                bulletnum = 16
+                if lunatic: bulletnum = 20
+                BulletPattern(1, Vector2(self.position.x + 40, self.position.y + 44), bulletnum)
 
 
 
@@ -528,7 +562,11 @@ class TextboxObject(Object):
                     if self.text[n + 2] == "B": color = pygame.Color(0, 0, 255)
                     if self.text[n + 2] == "W": color = pygame.Color(255, 255, 255)
                     if self.text[n + 2] == "X": color = pygame.Color(255, 255, 255)
-                    n += 2
+                    continue
+            if n > 0:
+                if self.char == "c" and self.text[n - 1] == "#":
+                    continue
+                if self.text[n - 1] == "c" and self.text[n - 2] == "#":
                     continue
 
             if self.char == "\n":
@@ -644,7 +682,8 @@ class IntroMenuScene(Scene):
     def __init__(self):
         super().__init__()
         self.options = []
-        self.options.append(Text(TextConfig(position=Vector2(320, 300), text="Start", alignment=TextAlign(h="center", v="top"))))
+        self.options.append(Text(TextConfig(position=Vector2(320, 250), text="Start", alignment=TextAlign(h="center", v="top"))))
+        self.options.append(Text(TextConfig(position=Vector2(320, 300), text="Endless", alignment=TextAlign(h="center", v="top"))))
         self.options.append(Text(TextConfig(position=Vector2(320, 350), text="Leaderboard", alignment=TextAlign(h="center", v="top"))))
         #self.options.append(Text(TextConfig(position=Vector2(320, 400), text="Tutorial", alignment=TextAlign(h="center", v="top"))))
         self.options.append(Text(TextConfig(position=Vector2(320, 400), text="Quit", alignment=TextAlign(h="center", v="top"))))
@@ -672,21 +711,37 @@ class IntroMenuScene(Scene):
 
 
         if ConfirmKeyPressed():
+            global lunatic
+            global score
+            global name
+            global player
+            global jimmyboss
+            global endless
+            global gameover
             if self.menu == 0:
                 if self.selected == 0:
-                    global lunatic
-                    global score
-                    global player
-                    global jimmyboss
                     lunatic = ButtonHeld(pygame.K_LSHIFT)
                     
+                    name = ""
                     score = 0
                     jimmyboss = -1
+                    gameover = False
                     player = PlayerObject()
                     ChangeScene(GameScene())
                 elif self.selected == 1:
-                    self.menu = 1
+                    lunatic = ButtonHeld(pygame.K_LSHIFT)
+                    
+                    endless = True
+
+                    name = ""
+                    score = 0
+                    jimmyboss = -1
+                    gameover = False
+                    player = PlayerObject()
+                    ChangeScene(GameScene())
                 elif self.selected == 2:
+                    self.menu = 2
+                elif self.selected == 3:
                     pygame.quit()
                     sys.exit(0)
                 else:
@@ -700,21 +755,25 @@ class IntroMenuScene(Scene):
             for i in range(len(self.options)):
                 if i == self.selected: self.options[i].ChangeColor(selectColor)
                 else: self.options[i].ChangeColor(pygame.Color(255, 255, 255))
-        elif self.menu == 1:
+        elif self.menu == 2:
             for i in range(len(hiscores)):
                 color = pygame.Color(255, 255, 255)
                 if GetScoreAtIndex(i)["lunatic"] == 1: color = pygame.Color(255, 0, 0)
-                DrawText(50, 50 + (30 * i), GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"]), color)
+                text = GetScoreAtIndex(i)["name"] + " - " + str(GetScoreAtIndex(i)["score"])
+                if GetScoreAtIndex(i)["endless"] == 1: text += " (endless)"
+                DrawText(50, 50 + (30 * i), text, color)
         elif self.menu == 2:
             pass
 
 class GameScene(Scene):
     def __init__(self):
         super().__init__()
-        channelMusic.play(musLevel1, 0)
+        if endless: channelMusic.play(musLevel1, 99999)
+        else: channelMusic.play(musLevel1, 0)
 
         self.textScore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 80), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
         self.textHiscore = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 170), text="0000000", alignment=TextAlign(h="center", v="top"), size=32))
+        self.textLives = Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 260), text="111", alignment=TextAlign(h="center", v="top"), size=32))
         self.instances = [
             player,
             bulletgen,
@@ -722,8 +781,10 @@ class GameScene(Scene):
             self.textScore,
             Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 140), text="HISCORE", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
             self.textHiscore,
+            Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 230), text="LIVES", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 255, 0))),
+            self.textLives,
         ]
-        if lunatic: self.instances.append(Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 240), text="LUNATIC", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 0, 0))))
+        if lunatic: self.instances.append(Text(TextConfig(position=Vector2(PLAYFIELD_RIGHT_XPOS + ((SCREEN_WIDTH - PLAYFIELD_RIGHT_XPOS) / 2), 420), text="LUNATIC", alignment=TextAlign(h="center", v="top"), size=32, color=pygame.Color(255, 0, 0))))
         for i in range(64):
             self.instances.append(StarObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), random.randint(PLAYFIELD_TOP_HEIGHT, PLAYFIELD_BOTTOM_YPOS)))
 
@@ -735,6 +796,7 @@ class GameScene(Scene):
         global jimmyboss
         global myScoreNow
         global deaths
+        global endless
         super().update(dt)
         self.textScore.ChangeText(f"{score:08d}")
         if score < GetScoreAtIndex(0)['score']:
@@ -745,11 +807,16 @@ class GameScene(Scene):
                 scene.addInstance(AlertObject("NEW HiSCORE!!!"))
             self.textHiscore.ChangeText(f"{score:08d}")
 
+        if deaths == 0: self.textLives.ChangeText(f"111")
+        if deaths == 1: self.textLives.ChangeText(f"110")
+        if deaths == 2: self.textLives.ChangeText(f"100")
+        if deaths == 3: self.textLives.ChangeText(f"000")
+
+
         if DEBUG:
             if ButtonPressed(pygame.K_g):
                 deaths = 3
                 TimeToDie()
-
         if jimmyspawned == True: return
         if gameover: return
 
@@ -759,9 +826,11 @@ class GameScene(Scene):
         if timer % random.randint(20, 30) == 0 and jimmyboss == -1:
             self.addInstance(EnemyObject(random.randint(PLAYFIELD_LEFT_WIDTH, PLAYFIELD_RIGHT_XPOS), PLAYFIELD_TOP_HEIGHT - 24, sprBaseEnemy, Vector2(random.randint(-1, 1), 2)))
 
+        if endless: return
+
         if channelMusic.get_busy() == False:
             jimmyspawned = True
-            jimmyboss = JimmyBossObject(100, 100)
+            jimmyboss = JimmyBossObject(185, PLAYFIELD_TOP_HEIGHT + 72)
             scene.addInstance(jimmyboss)
             print("now it's time for the real battle")
 
